@@ -7,7 +7,6 @@
 #include <vector>
 #include <fstream>
 #include <gtest/gtest.h>
-#include <ros/param.h>
 
 class Em2040Util : public ::testing::Test
 {
@@ -79,9 +78,8 @@ TEST_F(Em2040Util, test_file_split_out_xml_params_pass)
 
 int main(int argc, char **argv)
 {
+  // No rclcpp::init needed: the helpers under test are pure string/file parsing.
   testing::InitGoogleTest(&argc, argv);
-  //  ros::init(argc, argv, "test_em2040_utils");
   auto ret = RUN_ALL_TESTS();
-  //  ros::shutdown();
   return ret;
 }

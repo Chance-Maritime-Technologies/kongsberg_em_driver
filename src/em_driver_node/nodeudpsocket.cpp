@@ -1,31 +1,50 @@
 #include "nodeudpsocket.h"
 #include <memory>
-#include <ros/console.h>
 #include <boost/asio/ip/multicast.hpp>
 #include <boost/asio/placeholders.hpp>
+#include <boost/asio/post.hpp>
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <boost/bind/bind.hpp>
 
 using namespace boost::asio::ip;
 
+namespace
+{
+/// Declare-on-first-use parameter read.
+///
+/// ROS 1 checked nh.hasParam() for each of the three socket settings and logged FATAL if any
+/// were absent, then went ahead with the default anyway. ROS 2 gives a declared parameter its
+/// default immediately, so "absent" is no longer observable without the Galactic+
+/// declare_parameter(name, type) overload. The resolved value is logged instead, which
+/// surfaces a misconfigured socket just as effectively.
+template <typename T>
+T socket_param(const rclcpp::Node::SharedPtr &node, const std::string &name, const T &fallback)
+{
+  const T value = node->has_parameter(name) ? node->get_parameter(name).get_value<T>()
+                                            : node->declare_parameter<T>(name, fallback);
+  RCLCPP_INFO_STREAM(node->get_logger(), "  " << name << " = " << value);
+  return value;
+}
+}  // namespace
+
   #if BOOST_VERSION < 106600
-  NodeUdpSocket::NodeUdpSocket(boost::asio::io_service& io_service, const std::string& name, ros::NodeHandle &nh)
+  NodeUdpSocket::NodeUdpSocket(boost::asio::io_service& io_service, const std::string& name,
+                               rclcpp::Node::SharedPtr node)
 #else
-  NodeUdpSocket::NodeUdpSocket(boost::asio::io_context& io_service, const std::string& name, ros::NodeHandle &nh)
+  NodeUdpSocket::NodeUdpSocket(boost::asio::io_context& io_service, const std::string& name,
+                               rclcpp::Node::SharedPtr node)
 #endif
-: name_(name)
+: name_(name), node_(node), io_context_(io_service)
 {
   recv_buffer_.resize(65536);
-  const auto PARAM_PREFIX = name + "/";
-  if (not nh.hasParam(PARAM_PREFIX + "udp_rx_port") or not nh.hasParam(PARAM_PREFIX + "udp_tx_port") or
-      not nh.hasParam(PARAM_PREFIX + "udp_address"))
-  {
-    ROS_FATAL_STREAM("Missing udp_rx_port or udp_tx_port or udp_address parameter for socket " << name);
-  }
+  // ROS 2 parameter names nest with '.' rather than '/'
+  const auto PARAM_PREFIX = name + ".";
 
-  int udp_rx_port = nh.param(PARAM_PREFIX + "udp_rx_port", 4444);
-  int udp_tx_port = nh.param(PARAM_PREFIX + "udp_tx_port", 5555);
-  std::string udp_address = nh.param(PARAM_PREFIX + "udp_address", std::string("127.0.0.1"));
+  RCLCPP_INFO_STREAM(node_->get_logger(), "UDP socket " << name << " configuration:");
+  int udp_rx_port = socket_param<int>(node_, PARAM_PREFIX + "udp_rx_port", 4444);
+  int udp_tx_port = socket_param<int>(node_, PARAM_PREFIX + "udp_tx_port", 5555);
+  std::string udp_address = socket_param<std::string>(node_, PARAM_PREFIX + "udp_address", "127.0.0.1");
 
   // Create the socket and endpoint
   auto udp_ip = address::from_string(udp_address);
@@ -34,7 +53,7 @@ using namespace boost::asio::ip;
     socket_ = std::make_unique<udp::socket>(io_service, udp::endpoint(udp::v4(), udp_rx_port));;
     remote_endpoint_ = udp::endpoint(udp_ip, udp_tx_port);
   } else {
-    ROS_ERROR_STREAM("Multicast address "<<udp_address<<" receive only");
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "Multicast address "<<udp_address<<" receive only");
     // Create the socket
     socket_ = std::unique_ptr<udp::socket>(new udp::socket(io_service));
     auto listen_address = address::from_string("0.0.0.0");
@@ -55,7 +74,7 @@ using namespace boost::asio::ip;
   {
     if (!split_add.back().compare("255"))
     {
-      ROS_INFO_STREAM("Setting socket broadcast option");
+      RCLCPP_INFO_STREAM(node_->get_logger(), "Setting socket broadcast option");
       boost::asio::socket_base::broadcast option(true);
       socket_->set_option(option);
     }
@@ -68,8 +87,26 @@ using namespace boost::asio::ip;
 
 void NodeUdpSocket::sendData(const std::string &data)
 {
-  socket_->async_send_to(boost::asio::buffer(data), remote_endpoint_,
-                         boost::bind(&NodeUdpSocket::handle_send, this, boost::asio::placeholders::error));
+  // Called from the rclcpp executor thread, whereas the receive chain runs on the io_context
+  // thread. A boost::asio socket may not be used concurrently from two threads, so hop onto
+  // the io_context before touching it. Under ROS 1 both lived on the same thread (courtesy of
+  // AsioCallbackQueue) and this could go straight to async_send_to.
+  //
+  // The payload is also copied into a shared_ptr the completion handler keeps alive: the
+  // caller's string dies at the end of the calling statement, but async_send_to needs the
+  // buffer to stay valid until the write completes.
+  auto payload = std::make_shared<std::string>(data);
+  auto do_send = [this, payload]() {
+    socket_->async_send_to(boost::asio::buffer(*payload), remote_endpoint_,
+                           [this, payload](const boost::system::error_code &error, std::size_t) {
+                             handle_send(error);
+                           });
+  };
+#if BOOST_VERSION < 106600
+  io_context_.post(do_send);
+#else
+  boost::asio::post(io_context_, do_send);
+#endif
 }
 
 void NodeUdpSocket::receive(void)
@@ -85,12 +122,12 @@ void NodeUdpSocket::handle_receive(const boost::system::error_code &error, std::
   if (!error || error == boost::asio::error::message_size)
   {
     // Store timestamp as soon as received
-    ds_core_msgs::RawData m;
-    m.ds_header.io_time = ros::Time::now();
+    ds_core_msgs::msg::RawData m;
+    m.ds_header.io_time = node_->now();
     m.data = std::vector<unsigned char>(recv_buffer_.begin(), recv_buffer_.begin() + bytes_transferred);
-    m.data_direction = ds_core_msgs::RawData::DATA_IN;
+    m.data_direction = ds_core_msgs::msg::RawData::DATA_IN;
 
-    if (!recv_cb_.empty())
+    if (recv_cb_)
     {
       recv_cb_(m);
     }
@@ -98,7 +135,7 @@ void NodeUdpSocket::handle_receive(const boost::system::error_code &error, std::
     receive();
     if (error == boost::asio::error::message_size)
     {
-      ROS_ERROR_STREAM("UDP Socket message size error.Bytes received" << bytes_transferred);
+      RCLCPP_ERROR_STREAM(node_->get_logger(), "UDP Socket message size error.Bytes received" << bytes_transferred);
     }
   }
 }
@@ -107,7 +144,7 @@ void NodeUdpSocket::handle_send(const boost::system::error_code &error)
 {
   if (error.value() != boost::system::errc::success)
   {
-    ROS_ERROR_STREAM("Failed sending udp data (" << name_ << "):" << error.message());
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "Failed sending udp data (" << name_ << "):" << error.message());
   }
 }
 

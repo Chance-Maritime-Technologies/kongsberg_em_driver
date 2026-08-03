@@ -33,45 +33,51 @@
 
 #pragma once
 
-#include <ds_core_msgs/RawData.h>
+#include <ds_core_msgs/msg/raw_data.hpp>
 #include "../../src/em_driver_library/EM_datagrams/EMdgmFormat.h"
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/PointCloud2.h>
-#include <ros/node_handle.h>
-#include <pcl_ros/point_cloud.h>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <rclcpp/rclcpp.hpp>
 
-#include "ds_kongsberg_msgs/PingCmd.h"
-#include "ds_kongsberg_msgs/PowerCmd.h"
-#include "ds_kongsberg_msgs/SettingsCmd.h"
-#include "ds_kongsberg_msgs/MultiSettingsCmd.h"
-#include "ds_kongsberg_msgs/BistCmd.h"
-#include "ds_kongsberg_msgs/LoadXmlCmd.h"
-#include "ds_kongsberg_msgs/KongsbergStatus.h"
-#include "ds_kongsberg_msgs/KongsbergKMAllRecord.h"
-#include "ds_kongsberg_msgs/KongsbergSetting.h"
-#include "ds_kongsberg_msgs/KongsbergRuntimeParams.h"
+#include "ds_kongsberg_msgs/srv/ping_cmd.hpp"
+#include "ds_kongsberg_msgs/srv/power_cmd.hpp"
+#include "ds_kongsberg_msgs/srv/settings_cmd.hpp"
+#include "ds_kongsberg_msgs/srv/multi_settings_cmd.hpp"
+#include "ds_kongsberg_msgs/srv/bist_cmd.hpp"
+#include "ds_kongsberg_msgs/srv/load_xml_cmd.hpp"
+#include "ds_kongsberg_msgs/msg/kongsberg_status.hpp"
+#include "ds_kongsberg_msgs/msg/kongsberg_km_all_record.hpp"
+#include "ds_kongsberg_msgs/msg/kongsberg_setting.hpp"
+#include "ds_kongsberg_msgs/msg/kongsberg_runtime_params.hpp"
 
-#include <ds_multibeam_msgs/MultibeamRaw.h>
+#include <ds_multibeam_msgs/msg/multibeam_raw.hpp>
 #include <boost/utility.hpp>
 
 #include <functional>
+#include <memory>
 
 namespace kongsberg_em{
 
 struct KongsbergEM2040Private;
 using SendKCtrlDataFunc = std::function<void(const std::string &)>;
-using KSetting = ds_kongsberg_msgs::KongsbergSetting;
+using KSetting = ds_kongsberg_msgs::msg::KongsbergSetting;
 
+/// \brief Driver for the Kongsberg EM2040 multibeam.
+///
+/// Threading: the UDP sockets feeding _on_kmall_data()/_on_kctrl_data() are driven by a
+/// boost::asio io_context running on its own thread, while the service and timer callbacks
+/// run on the rclcpp executor thread. Every entry point from either thread therefore takes
+/// the recursive mutex held in KongsbergEM2040Private before touching driver state.
 class KongsbergEM2040  : boost::noncopyable
 {
 
  public:
-  KongsbergEM2040(ros::NodeHandle &nh, SendKCtrlDataFunc send_kctrl_data);
+  KongsbergEM2040(rclcpp::Node::SharedPtr node, SendKCtrlDataFunc send_kctrl_data);
   ~KongsbergEM2040();
 
-  bool parse_data(const ds_core_msgs::RawData &raw);
-  bool parse_message(const ds_core_msgs::RawData &raw);
-  bool read_kmall_dgm_from_kctrl(int type, const ds_core_msgs::RawData &raw);
+  bool parse_data(const ds_core_msgs::msg::RawData &raw);
+  bool parse_message(const ds_core_msgs::msg::RawData &raw);
+  bool read_kmall_dgm_from_kctrl(int type, const ds_core_msgs::msg::RawData &raw);
   bool parse_ipu(std::vector<std::string> fields);
 
   /**
@@ -85,11 +91,11 @@ class KongsbergEM2040  : boost::noncopyable
    * This function expects partitions to arrive sequentially for one given message, which is the
    * case when receiving data from the real hardware.
    */
-  std::pair<bool, ds_core_msgs::RawData> check_and_append_mpartition(const ds_core_msgs::RawData & );
-  bool read_bist_result(ds_core_msgs::RawData& raw);
+  std::pair<bool, ds_core_msgs::msg::RawData> check_and_append_mpartition(const ds_core_msgs::msg::RawData & );
+  bool read_bist_result(ds_core_msgs::msg::RawData& raw);
   uint8_t read_good_bad_missing(std::string);
 
-  void mbraw_to_kmstatus(ds_multibeam_msgs::MultibeamRaw raw);
+  void mbraw_to_kmstatus(ds_multibeam_msgs::msg::MultibeamRaw raw);
 
   // Calls all the ROS setup functions at once(publishers, services, parameters, timers)
   void setupAll();
@@ -99,18 +105,25 @@ class KongsbergEM2040  : boost::noncopyable
   void setupParameters();
   void setupTimers();
 
-  void _on_kmall_data(ds_core_msgs::RawData raw);
-  void _on_kctrl_data(ds_core_msgs::RawData raw);
+  void _on_kmall_data(ds_core_msgs::msg::RawData raw);
+  void _on_kctrl_data(ds_core_msgs::msg::RawData raw);
 
 private:
 
-  bool _ping_cmd(ds_kongsberg_msgs::PingCmd::Request &req, ds_kongsberg_msgs::PingCmd::Response &res);
-  bool _power_cmd(ds_kongsberg_msgs::PowerCmd::Request &req, ds_kongsberg_msgs::PowerCmd::Response &res);
-  bool _settings_cmd(ds_kongsberg_msgs::SettingsCmd::Request &req, ds_kongsberg_msgs::SettingsCmd::Response &res);
-  bool _multisettings_cmd(ds_kongsberg_msgs::MultiSettingsCmd::Request &req, ds_kongsberg_msgs::MultiSettingsCmd::Response &res);
-  bool _read_settings_cmd(ds_kongsberg_msgs::SettingsCmd::Request &req, ds_kongsberg_msgs::SettingsCmd::Response &res);
-  bool _bist_cmd(ds_kongsberg_msgs::BistCmd::Request &req, ds_kongsberg_msgs::BistCmd::Response &res);
-  bool _load_xml_cmd(ds_kongsberg_msgs::LoadXmlCmd::Request &req, ds_kongsberg_msgs::LoadXmlCmd::Response &res);
+  void _ping_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::PingCmd::Request> req,
+                 std::shared_ptr<ds_kongsberg_msgs::srv::PingCmd::Response> res);
+  void _power_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::PowerCmd::Request> req,
+                  std::shared_ptr<ds_kongsberg_msgs::srv::PowerCmd::Response> res);
+  void _settings_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::SettingsCmd::Request> req,
+                     std::shared_ptr<ds_kongsberg_msgs::srv::SettingsCmd::Response> res);
+  void _multisettings_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::MultiSettingsCmd::Request> req,
+                          std::shared_ptr<ds_kongsberg_msgs::srv::MultiSettingsCmd::Response> res);
+  void _read_settings_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::SettingsCmd::Request> req,
+                          std::shared_ptr<ds_kongsberg_msgs::srv::SettingsCmd::Response> res);
+  void _bist_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::BistCmd::Request> req,
+                 std::shared_ptr<ds_kongsberg_msgs::srv::BistCmd::Response> res);
+  void _load_xml_cmd(const std::shared_ptr<ds_kongsberg_msgs::srv::LoadXmlCmd::Request> req,
+                     std::shared_ptr<ds_kongsberg_msgs::srv::LoadXmlCmd::Response> res);
 
   std::string _send_kctrl_command(int cmd);
   template <class T1>
@@ -121,7 +134,7 @@ private:
   void _read_kctrl_params();
 
   template <class EMdgmMRZ_S>
-  void _read_and_publish_mrz(const ds_kongsberg_msgs::KongsbergKMAllRecord &r,
+  void _read_and_publish_mrz(const ds_kongsberg_msgs::msg::KongsbergKMAllRecord &r,
                              std::vector<uint8_t> &data);
 
   void _startup_sequence();
@@ -131,18 +144,19 @@ private:
   void _write_kmall_data(const std::vector<uint8_t> &data);
   void _write_kctrl_xml(std::vector<uint8_t>& data);
   std::string _read_kctrl_xml(std::string filename);
-  void _on_kctrl_timeout(const ros::TimerEvent&);
-  void _on_kmall_timeout(const ros::TimerEvent&);
-  void _on_pu_powered_timeout(const ros::TimerEvent&);
-  void _on_pu_connected_timeout(const ros::TimerEvent&);
-  void _on_pinging_timeout(const ros::TimerEvent&);
+  void _on_kctrl_timeout();
+  void _on_kmall_timeout();
+  void _on_pu_powered_timeout();
+  void _on_pu_connected_timeout();
+  void _on_pinging_timeout();
 
   void _reset_rt_params();
   void _reset_sensor_input_statuses();
 
   static constexpr auto UNKNOWN_STATUS = "UNKNOWN";
 
-  static double _timeToLastPartition(const EMdgm_f::EMdgmHeader *hdr);
+  // Needs the node clock, so unlike the ROS 1 version this is not static
+  double _timeToLastPartition(const EMdgm_f::EMdgmHeader *hdr);
 
   // All object members are hidden inside a pointer to preserve binary compatiblity
   // See https://wiki.qt.io/D-Pointer for explanation
@@ -152,4 +166,3 @@ private:
 };
 
 }
-

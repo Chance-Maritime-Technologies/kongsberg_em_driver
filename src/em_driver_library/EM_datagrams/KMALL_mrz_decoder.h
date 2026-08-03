@@ -5,10 +5,26 @@
 #include "EMdgmFormat_i.h"
 #include <utility>
 #include <cstring>
-#include <ros/console.h>
+#include <rclcpp/clock.hpp>
+#include <rclcpp/logger.hpp>
+#include <rclcpp/logging.hpp>
 
 namespace kmall
 {
+// These decoders are free functions with no node to borrow a logger from, so they log
+// against a named logger instead. The clock backs the throttled macros; it is steady rather
+// than ROS time so the decoders stay usable before/without a node.
+inline rclcpp::Logger logger()
+{
+  return rclcpp::get_logger("kmall");
+}
+
+inline rclcpp::Clock & throttle_clock()
+{
+  static rclcpp::Clock clock{RCL_STEADY_TIME};
+  return clock;
+}
+
 // The code below assumes manu constants and structures not to change between protocol revisions
 // This is checked at compile time here
 static_assert(EMdgm_f::MAX_NUM_BEAMS == EMdgm_h::MAX_NUM_BEAMS
@@ -38,7 +54,7 @@ bool read_struct(uint8_t *ptr, int &count, const int max_length, Struct &s)
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("Exceeded max length when reading " << typeid(Struct).name());
+    RCLCPP_ERROR_STREAM(logger(), "Exceeded max length when reading " << typeid(Struct).name());
   }
   return error;
 }
@@ -48,11 +64,11 @@ bool read_body_struct(uint8_t *ptr, int &count, const int max_length, body_S &s)
 {
   s = *(reinterpret_cast<body_S *>(ptr + count));
   count += s.numBytesCmnPart;
-  ROS_ERROR_STREAM_COND(s.numBytesCmnPart != sizeof(body_S), "body size diff");
+  RCLCPP_ERROR_STREAM_EXPRESSION(logger(), s.numBytesCmnPart != sizeof(body_S), "body size diff");
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("*After Common Part* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
+    RCLCPP_ERROR_STREAM(logger(), "*After Common Part* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
   }
   return error;
 }
@@ -62,11 +78,11 @@ bool read_ping_info_struct(uint8_t *ptr, int &count, const int max_length, pingI
 {
   s = *(reinterpret_cast<pingInfo_S *>(ptr + count));
   count += s.numBytesInfoData;
-  ROS_ERROR_STREAM_COND(s.numBytesInfoData != sizeof(pingInfo_S), "pingInfo size diff");
+  RCLCPP_ERROR_STREAM_EXPRESSION(logger(), s.numBytesInfoData != sizeof(pingInfo_S), "pingInfo size diff");
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("*After Ping Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
+    RCLCPP_ERROR_STREAM(logger(), "*After Ping Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
   }
   return error;
 }
@@ -77,11 +93,11 @@ bool read_tx_sector_struct(uint8_t *ptr, int &count, const int max_length, txSec
 {
   s = *(reinterpret_cast<txSectorInfo_S *>(ptr + count));
   count += numBytesPerTxSector;
-  ROS_ERROR_STREAM_COND(numBytesPerTxSector != sizeof(txSectorInfo_S), "tx Sector size diff");
+  RCLCPP_ERROR_STREAM_EXPRESSION(logger(), numBytesPerTxSector != sizeof(txSectorInfo_S), "tx Sector size diff");
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("*After tx Sector Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
+    RCLCPP_ERROR_STREAM(logger(), "*After tx Sector Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
   }
   return error;
 }
@@ -91,11 +107,11 @@ bool read_rx_info_struct(uint8_t *ptr, int &count, const int max_length, rxInfo_
 {
   s = *(reinterpret_cast<rxInfo_S *>(ptr + count));
   count += s.numBytesRxInfo;
-  ROS_ERROR_STREAM_COND(s.numBytesRxInfo != sizeof(rxInfo_S), "rx Sector size diff");
+  RCLCPP_ERROR_STREAM_EXPRESSION(logger(), s.numBytesRxInfo != sizeof(rxInfo_S), "rx Sector size diff");
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("*After rx Sector Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
+    RCLCPP_ERROR_STREAM(logger(), "*After rx Sector Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
   }
   return error;
 }
@@ -105,11 +121,11 @@ bool read_extra_det_struct(uint8_t *ptr, int &count, const int max_length, extra
 {
   s = *(reinterpret_cast<extraDet_S *>(ptr + count));
   count += numBytesPerClass;
-  ROS_ERROR_STREAM_COND(numBytesPerClass != sizeof(extraDet_S), "extraDet size diff");
+  RCLCPP_ERROR_STREAM_EXPRESSION(logger(), numBytesPerClass != sizeof(extraDet_S), "extraDet size diff");
   auto error = (count > max_length);
   if (error)
   {
-    ROS_ERROR_STREAM("*After extra Det Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
+    RCLCPP_ERROR_STREAM(logger(), "*After extra Det Info* In read_mrz, count=" << count << " exceeded max_length=" << max_length);
   }
   return error;
 }
@@ -151,7 +167,7 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
 
   if (mrz.pingInfo.numTxSectors > EMdgm_f::MAX_NUM_TX_PULSES)
   {
-    ROS_ERROR_STREAM("Read " << mrz.pingInfo.numTxSectors << " sectors vs maximum of " << EMdgm_f::MAX_NUM_TX_PULSES);
+    RCLCPP_ERROR_STREAM(logger(), "Read " << mrz.pingInfo.numTxSectors << " sectors vs maximum of " << EMdgm_f::MAX_NUM_TX_PULSES);
     return error;
   }
 
@@ -159,7 +175,7 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
   {
     if (read_tx_sector_struct(ptr, count, max_length, mrz.sectorInfo[i], mrz.pingInfo.numBytesPerTxSector))
     {
-      ROS_ERROR_STREAM("Failed decoding sector " << i << "/" << mrz.pingInfo.numTxSectors << " from ping count "
+      RCLCPP_ERROR_STREAM(logger(), "Failed decoding sector " << i << "/" << mrz.pingInfo.numTxSectors << " from ping count "
                                                  << mrz.cmnPart.pingCnt);
       return error;
     }
@@ -172,7 +188,7 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
 
   if (mrz.rxInfo.numExtraDetectionClasses > EMdgm_f::MAX_EXTRA_DET_CLASSES)
   {
-    ROS_ERROR_STREAM("Read " << mrz.rxInfo.numExtraDetectionClasses << " sectors vs maximum of "
+    RCLCPP_ERROR_STREAM(logger(), "Read " << mrz.rxInfo.numExtraDetectionClasses << " sectors vs maximum of "
                              << EMdgm_f::MAX_EXTRA_DET_CLASSES);
     return error;
   }
@@ -188,7 +204,7 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
   auto nb_soundings = mrz.rxInfo.numSoundingsMaxMain + mrz.rxInfo.numExtraDetections;
   if (nb_soundings > (EMdgm_f::MAX_NUM_BEAMS + EMdgm_f::MAX_EXTRA_DET))
   {
-    ROS_ERROR_STREAM("Read " << nb_soundings << " sectors vs maximum of " << EMdgm_f::MAX_EXTRA_DET_CLASSES);
+    RCLCPP_ERROR_STREAM(logger(), "Read " << nb_soundings << " sectors vs maximum of " << EMdgm_f::MAX_EXTRA_DET_CLASSES);
   }
 
   int SIsamples = 0;
@@ -199,7 +215,7 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
       return error;
     }
     SIsamples += mrz.sounding[i].SInumSamples;
-    ROS_ERROR_COND(sizeof(mrz.sounding[i]) != mrz.rxInfo.numBytesPerSounding, "Soundings size difference !");
+    RCLCPP_ERROR_EXPRESSION(logger(), sizeof(mrz.sounding[i]) != mrz.rxInfo.numBytesPerSounding, "Soundings size difference !");
   }
 
   for (int i = 0; i < SIsamples; i++)
@@ -212,11 +228,11 @@ static std::pair<bool, EMdgmMRZ_S> read_mrz(uint8_t *ptr, int max_length)
   auto check_length = *(reinterpret_cast<uint32_t *>(ptr + count));
   count += sizeof(uint32_t);
   if(count != max_length){
-    ROS_ERROR_STREAM_THROTTLE(10, "Count: " << count << "!= max_length: " << max_length);
+    RCLCPP_ERROR_STREAM_THROTTLE(logger(), throttle_clock(), 10000, "Count: " << count << "!= max_length: " << max_length);
   }
 
   if(mrz.header.numBytesDgm != check_length){
-    ROS_ERROR_STREAM_THROTTLE(10,
+    RCLCPP_ERROR_STREAM_THROTTLE(logger(), throttle_clock(), 10000,
                         "Header len: " << mrz.header.numBytesDgm << " Check len: " << check_length);  
   }
   

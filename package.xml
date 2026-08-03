@@ -20,10 +20,16 @@
   <depend>sensor_msgs</depend>
   <depend>pcl_ros</depend>
   <depend>pcl_conversions</depend>
+  <depend>libpcl-all-dev</depend>
   <depend>ds_core_msgs</depend>
   <depend>ds_multibeam_msgs</depend>
   <depend>ds_kongsberg_msgs</depend>
   <depend>libboost-system-dev</depend>
+
+  <!-- Used by launch/kongsberg_2040.launch.py -->
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>tf2_ros</exec_depend>
 
   <test_depend>ament_cmake_gtest</test_depend>
   <test_depend>ament_lint_auto</test_depend>
