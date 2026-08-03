@@ -1,41 +1,35 @@
 <?xml version="1.0"?>
-<package format="2">
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
   <name>kongsberg_em_driver</name>
   <version>0.1.0</version>
   <description>The kongsberg_em_driver package</description>
 
-  <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <maintainer email="nobody@nowhere.com">NONE</maintainer>
 
-
-  <!-- One license tag required, multiple allowed, one license per tag -->
-  <!-- Commonly used license strings: -->
-  <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
   <license>BSD</license>
 
-
-  <!-- Url tags are optional, but multiple are allowed, one per tag -->
-  <!-- Optional attribute type can be: website, bugtracker, or repository -->
   <url type="website">http://www.whoi.edu</url>
 
-  <!-- Author tags are optional, multiple are allowed, one per tag -->
-  <!-- Authors do not have to be maintainers, but could be -->
   <author email="axd@robopec.com">A. Durbec</author>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
-  <depend>roscpp</depend>
-  <depend>pcl_ros</depend>
+  <depend>rclcpp</depend>
   <depend>std_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>pcl_ros</depend>
+  <depend>pcl_conversions</depend>
   <depend>ds_core_msgs</depend>
   <depend>ds_multibeam_msgs</depend>
   <depend>ds_kongsberg_msgs</depend>
-  <depend>sensor_msgs</depend>
-  <depend>librosasio</depend>
+  <depend>libboost-system-dev</depend>
 
-  <!-- The export tag contains other, unspecified, tags -->
+  <test_depend>ament_cmake_gtest</test_depend>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
   <export>
-    <!-- Other tools can request additional information be placed here -->
-
+    <build_type>ament_cmake</build_type>
   </export>
 </package>

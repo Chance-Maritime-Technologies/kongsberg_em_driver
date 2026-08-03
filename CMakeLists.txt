@@ -1,102 +1,109 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.8)
 project(kongsberg_em_driver)
 
-set(CMAKE_CXX_STANDARD 14)
-# ext-numeric-literals is needed for Kinetic compilation
-add_compile_options(-std=c++14 -Wall -Werror=return-type -fext-numeric-literals)
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
+  set(CMAKE_CXX_STANDARD_REQUIRED ON)
+endif()
 
-## Find catkin macros and libraries
-## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
-## is used, also find other catkin packages
-find_package(catkin REQUIRED COMPONENTS
-        roscpp
-        pcl_ros
-        std_msgs
-        ds_core_msgs
-        ds_kongsberg_msgs
-        ds_multibeam_msgs
-        librosasio)
+add_compile_options(-Wall -Werror=return-type)
+
+find_package(ament_cmake REQUIRED)
+
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(pcl_ros REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(ds_core_msgs REQUIRED)
+find_package(ds_multibeam_msgs REQUIRED)
+find_package(ds_kongsberg_msgs REQUIRED)
 
 find_package(Boost REQUIRED COMPONENTS system)
 
-
-###################################
-## catkin specific configuration ##
-###################################
-## The catkin_package macro generates cmake config files for your package
-## Declare things to be passed to dependent projects
-## INCLUDE_DIRS: uncomment this if your package contains header files
-## LIBRARIES: libraries you create in this project that dependent projects also need
-## CATKIN_DEPENDS: catkin_packages dependent projects also need
-## DEPENDS: system dependencies of this project that dependent projects also need
-catkin_package(
-  INCLUDE_DIRS include
-  LIBRARIES lib_kongsberg_em
-  CATKIN_DEPENDS std_msgs roscpp ds_core_msgs
-  ds_kongsberg_msgs ds_multibeam_msgs librosasio
-#  DEPENDS system_lib
+set(DEPENDENCIES
+  rclcpp
+  std_msgs
+  sensor_msgs
+  pcl_ros
+  pcl_conversions
+  ds_core_msgs
+  ds_multibeam_msgs
+  ds_kongsberg_msgs
 )
 
 ###########
 ## Build ##
 ###########
 
-include_directories(
-  include
- ${catkin_INCLUDE_DIRS}
-)
-
 file(GLOB_RECURSE LIB_SOURCES src/em_driver_library/*.cpp src/em_driver_library/*.h)
-# Declare a C++ library
-add_library(lib_kongsberg_em
-  ${LIB_SOURCES}
+add_library(lib_kongsberg_em ${LIB_SOURCES})
+
+target_include_directories(lib_kongsberg_em PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
 )
-add_dependencies(lib_kongsberg_em ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ament_target_dependencies(lib_kongsberg_em ${DEPENDENCIES})
+target_link_libraries(lib_kongsberg_em Boost::system)
 
 file(GLOB_RECURSE NODE_SOURCES src/em_driver_node/*.cpp src/em_driver_node/*.h)
 add_executable(kongsberg_em_node ${NODE_SOURCES})
 
-target_link_libraries(lib_kongsberg_em
-   ${catkin_LIBRARIES}
+target_include_directories(kongsberg_em_node PRIVATE
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-
-target_link_libraries(kongsberg_em_node
-    lib_kongsberg_em
-   ${catkin_LIBRARIES}
-)
+ament_target_dependencies(kongsberg_em_node ${DEPENDENCIES})
+target_link_libraries(kongsberg_em_node lib_kongsberg_em)
 
 #############
 ## Install ##
 #############
 
-install(TARGETS lib_kongsberg_em kongsberg_em_node
-  ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+install(
+  TARGETS lib_kongsberg_em
+  EXPORT export_${PROJECT_NAME}
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
 )
 
-install(DIRECTORY include/lib_kongsberg_em/
-  DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+install(
+  TARGETS kongsberg_em_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  DIRECTORY include/
+  DESTINATION include
   FILES_MATCHING PATTERN "*.h"
-  PATTERN ".svn" EXCLUDE
 )
 
-install(DIRECTORY
-  launch
-  DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
+install(
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
+ament_export_include_directories(include)
+ament_export_libraries(lib_kongsberg_em)
+ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
+ament_export_dependencies(${DEPENDENCIES})
 
 #############
 ## Testing ##
 #############
 
-#if(CATKIN_ENABLE_TESTING)
-    find_package(rostest REQUIRED)
-    add_rostest_gtest(test_em2040_parse
-        launch/em2040_parse_test.test
-        src/test/test_kongsberg_em2040_parsing.cpp)
-    target_link_libraries(test_em2040_parse lib_kongsberg_em)
-    catkin_add_gtest(test_em2040_utils src/test/test_kongsberg_em2040_util.cpp WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
-    target_link_libraries(test_em2040_utils lib_kongsberg_em)
-#endif(CATKIN_ENABLE_TESTING)
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+
+  find_package(ament_cmake_gtest REQUIRED)
+
+  ament_add_gtest(test_em2040_parse src/test/test_kongsberg_em2040_parsing.cpp)
+  target_link_libraries(test_em2040_parse lib_kongsberg_em)
+
+  ament_add_gtest(test_em2040_utils src/test/test_kongsberg_em2040_util.cpp
+    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR})
+  target_link_libraries(test_em2040_utils lib_kongsberg_em)
+endif()
+
+ament_package()
