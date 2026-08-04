@@ -50,13 +50,14 @@ T socket_param(const rclcpp::Node::SharedPtr &node, const std::string &name, con
   auto udp_ip = address::from_string(udp_address);
   if (!udp_ip.is_multicast()){
     // Create the socket
+    RCLCPP_ERROR_STREAM(node_->get_logger(), "Not multicast address "<<udp_address);
     socket_ = std::make_unique<udp::socket>(io_service, udp::endpoint(udp::v4(), udp_rx_port));;
     remote_endpoint_ = udp::endpoint(udp_ip, udp_tx_port);
   } else {
     RCLCPP_ERROR_STREAM(node_->get_logger(), "Multicast address "<<udp_address<<" receive only");
     // Create the socket
     socket_ = std::unique_ptr<udp::socket>(new udp::socket(io_service));
-    auto listen_address = address::from_string("0.0.0.0");
+    auto listen_address = address::from_string(socket_param<std::string>(node_, PARAM_PREFIX + "bind_address", "127.0.0.1"));
     udp::endpoint listen_endpoint(listen_address, udp_rx_port);
     socket_->open(listen_endpoint.protocol());
 //    socket_->set_option(udp::socket::reuse_address(true));
