@@ -35,26 +35,39 @@
 
 #include <list>
 #include <gtest/gtest.h>
-#include <ros/param.h>
-#include <log4cxx/logger.h>
+#include <rclcpp/rclcpp.hpp>
 
 // Test fixture
+//
+// The ROS 1 version pulled these paths from the rostest launch file. ROS 2 has no
+// add_rostest_gtest equivalent, so they are plain node parameters whose defaults resolve
+// against the WORKING_DIRECTORY (the package source dir) set in CMakeLists.txt.
 class Em2040Test : public::testing::Test
 {
  public:
-  std::string pass_path = ros::param::param<std::string>("pass_path", "kmall_pass.BIN");
-  std::string mrz_version_f_path = ros::param::param<std::string>("mrz_f_path","MRZ_versionF.kmall");
-  std::string mrz_version_h_path = ros::param::param<std::string>("mrz_h_path","MRZ_versionH.kmall");
-  std::string fail_path = ros::param::param<std::string>("fail_path", "kmall_fail.BIN");
-//  ds_kongsberg::KongsbergEM2040* node = new ds_kongsberg::KongsbergEM2040();
-  static void SetUpTestCase()
+  rclcpp::Node::SharedPtr node;
+  std::string pass_path;
+  std::string mrz_version_f_path;
+  std::string mrz_version_h_path;
+  std::string fail_path;
+
+  void SetUp() override
   {
-    ros::Time::init();
+    node = std::make_shared<rclcpp::Node>("test_em2040_parse");
+    pass_path = node->declare_parameter<std::string>("pass_path", "test/pass.kmall");
+    mrz_version_f_path = node->declare_parameter<std::string>("mrz_f_path", "test/MRZ_versionF.kmall");
+    mrz_version_h_path = node->declare_parameter<std::string>("mrz_h_path", "test/MRZ_versionH.kmall");
+    fail_path = node->declare_parameter<std::string>("fail_path", "test/kmall_fail.BIN");
+  }
+
+  void TearDown() override
+  {
+    node.reset();
   }
 };
 
 void sendKCtrlData(const std::string &data){
-
+  (void)data;
 }
 
 TEST_F(Em2040Test, alwaysPass)
@@ -72,8 +85,7 @@ TEST_F(Em2040Test, parseMRZversionF)
     fseek(fp, 0L, SEEK_END);
     auto size = ftell(fp);
     rewind(fp);
-    long long int index = 0;
-    auto byte_msg = ds_core_msgs::RawData{};
+    auto byte_msg = ds_core_msgs::msg::RawData{};
     byte_msg.data.resize(size);
     uint8_t foo[size];
 
@@ -83,7 +95,7 @@ TEST_F(Em2040Test, parseMRZversionF)
     {
       byte_msg.data[i] = foo[i];
     }
-    byte_msg.ds_header.io_time = ros::Time::now();
+    byte_msg.ds_header.io_time = node->now();
     EMdgm_f::EMdgmMRZ mrz;
     bool ok = false;
     std::tie(ok, mrz) = kmall::read_mrz<EMdgm_f::EMdgmMRZ>(byte_msg.data.data(), byte_msg.data.size());
@@ -103,8 +115,7 @@ TEST_F(Em2040Test, parseMRZversionH)
     fseek(fp, 0L, SEEK_END);
     auto size = ftell(fp);
     rewind(fp);
-    long long int index = 0;
-    auto byte_msg = ds_core_msgs::RawData{};
+    auto byte_msg = ds_core_msgs::msg::RawData{};
     byte_msg.data.resize(size);
     uint8_t foo[size];
 
@@ -114,7 +125,7 @@ TEST_F(Em2040Test, parseMRZversionH)
     {
       byte_msg.data[i] = foo[i];
     }
-    byte_msg.ds_header.io_time = ros::Time::now();
+    byte_msg.ds_header.io_time = node->now();
     EMdgm_h::EMdgmMRZ mrz;
     bool ok = false;
     std::tie(ok, mrz) = kmall::read_mrz<EMdgm_h::EMdgmMRZ>(byte_msg.data.data(), byte_msg.data.size());
@@ -126,9 +137,7 @@ TEST_F(Em2040Test, parseMRZversionH)
 
 TEST_F(Em2040Test, parsePass)
 {
-  auto f = boost::bind(&sendKCtrlData,_1);
-  ros::NodeHandle nh;
-  kongsberg_em::KongsbergEM2040 driver(nh,f);
+  kongsberg_em::KongsbergEM2040 driver(node, &sendKCtrlData);
   driver.setupAll();
   long long int index = 0;
   const auto test_ls = std::list<std::pair<bool, int>>{
@@ -171,8 +180,8 @@ TEST_F(Em2040Test, parsePass)
   for (auto test_l : test_ls){
     auto pass = test_l.first;
     auto size = test_l.second;
-    ROS_INFO_STREAM(" >> Reading " << size << " bytes from index " << index);
-    auto byte_msg = ds_core_msgs::RawData{};
+    RCLCPP_INFO_STREAM(node->get_logger(), " >> Reading " << size << " bytes from index " << index);
+    auto byte_msg = ds_core_msgs::msg::RawData{};
     bool ok = false;
     byte_msg.data.resize(size);
     uint8_t foo[size];
@@ -186,10 +195,10 @@ TEST_F(Em2040Test, parsePass)
       {
         byte_msg.data[i] = foo[i];
       }
-      byte_msg.ds_header.io_time = ros::Time::now();
+      byte_msg.ds_header.io_time = node->now();
       ok = driver.parse_data(byte_msg);
     }
-    ROS_ERROR_STREAM_COND(pass != ok,"Failed on message of size " << size);
+    RCLCPP_ERROR_STREAM_EXPRESSION(node->get_logger(), pass != ok, "Failed on message of size " << size);
     EXPECT_EQ(pass, ok);
     index += size;
   }
@@ -200,16 +209,12 @@ TEST_F(Em2040Test, parsePass)
 // Run all the tests that were declared with TEST()
 int main(int argc, char** argv)
 {
-  // ROS logs in unit tests
-  ROSCONSOLE_AUTOINIT;
-
-  /* To enable DEBUG logging: */
-//  log4cxx::LoggerPtr my_logger = log4cxx::Logger::getLogger(ROSCONSOLE_DEFAULT_NAME);
-//  my_logger->setLevel(ros::console::g_level_lookup[ros::console::levels::Debug]);
-
+  /* To enable DEBUG logging, either pass --ros-args --log-level debug or call:
+   * rcutils_logging_set_logger_level("test_em2040_parse", RCUTILS_LOG_SEVERITY_DEBUG);
+   */
+  rclcpp::init(argc, argv);
   testing::InitGoogleTest(&argc, argv);
-  ros::init(argc, argv, "test_em2040_parse");
   auto ret = RUN_ALL_TESTS();
-  ros::shutdown();
+  rclcpp::shutdown();
   return ret;
 }

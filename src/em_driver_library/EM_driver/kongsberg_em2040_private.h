@@ -34,49 +34,65 @@
 #pragma once
 
 #include "lib_kongsberg_em/kongsberg_em2040.h"
-#include <tf/transform_broadcaster.h>
+
+#include <ds_core_msgs/msg/clock_offset.hpp>
+#include <ds_kongsberg_msgs/msg/kongsberg_kssis.hpp>
+#include <ds_kongsberg_msgs/msg/kongsberg_mrz.hpp>
+#include <ds_kongsberg_msgs/msg/kongsberg_mrz_full.hpp>
+
+#include <fstream>
 #include <mutex>
+#include <sstream>
 
 namespace kongsberg_em{
 struct KongsbergEM2040Private{
-  ros::NodeHandle nh_;
+  rclcpp::Node::SharedPtr node_;
+
+  // Cached so the logging macros don't have to reach through node_ everywhere
+  rclcpp::Logger logger_ = rclcpp::get_logger("kongsberg_em2040");
+
+  // The socket callbacks are invoked from the boost::asio thread while the service and
+  // timer callbacks are invoked from the rclcpp executor thread, so all of the state
+  // below is guarded. Recursive because the locking entry points (_on_*_data, service
+  // and timer callbacks) call into public methods that lock as well.
+  std::recursive_mutex mutex_;
 
   // Callback given to the ROS node to send data using the KController
   // UDP connection
   SendKCtrlDataFunc send_kctrl_data_;
 
-  ros::ServiceServer ping_srv_;
-  ros::ServiceServer power_srv_;
-  ros::ServiceServer settings_srv_;
-  ros::ServiceServer multi_settings_srv_;
-  ros::ServiceServer read_settings_srv_;
-  ros::ServiceServer bist_srv_;
-  ros::ServiceServer xml_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::PingCmd>::SharedPtr ping_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::PowerCmd>::SharedPtr power_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::SettingsCmd>::SharedPtr settings_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::MultiSettingsCmd>::SharedPtr multi_settings_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::SettingsCmd>::SharedPtr read_settings_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::BistCmd>::SharedPtr bist_srv_;
+  rclcpp::Service<ds_kongsberg_msgs::srv::LoadXmlCmd>::SharedPtr xml_srv_;
 
-  ros::Publisher mbraw_pub_;
-  ros::Publisher pointcloud_pub_;
-  ros::Publisher offset_pub_;
-  ros::Publisher mrz_pub_;
-  ros::Publisher mrz_full_pub_;
+  rclcpp::Publisher<ds_multibeam_msgs::msg::MultibeamRaw>::SharedPtr mbraw_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pointcloud_pub_;
+  rclcpp::Publisher<ds_core_msgs::msg::ClockOffset>::SharedPtr offset_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergMRZ>::SharedPtr mrz_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergMRZFull>::SharedPtr mrz_full_pub_;
 
-  ros::Publisher kssis_pub_;
-  ros::Publisher kmstatus_pub_;
-  ros::Publisher kmall_record_pub_;
-  ros::Publisher rt_params_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergKSSIS>::SharedPtr kssis_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergStatus>::SharedPtr kmstatus_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergKMAllRecord>::SharedPtr kmall_record_pub_;
+  rclcpp::Publisher<ds_kongsberg_msgs::msg::KongsbergRuntimeParams>::SharedPtr rt_params_pub_;
 
   // The MRZ data from the KMALL format are provided wrt
   // "Vessel Coordinate System" as configured in installation parameters
   std::string mrz_frame_id_;
 
   // KCtrl startup info
-  ds_kongsberg_msgs::KongsbergStatus m_status;
-  ds_kongsberg_msgs::KongsbergRuntimeParams m_rtParams;
+  ds_kongsberg_msgs::msg::KongsbergStatus m_status;
+  ds_kongsberg_msgs::msg::KongsbergRuntimeParams m_rtParams;
 
-  ros::Timer kctrl_timer;
-  ros::Timer kmall_timer;
-  ros::Timer pu_powered_timer;
-  ros::Timer pu_connected_timer;
-  ros::Timer pinging_timer;
+  rclcpp::TimerBase::SharedPtr kctrl_timer;
+  rclcpp::TimerBase::SharedPtr kmall_timer;
+  rclcpp::TimerBase::SharedPtr pu_powered_timer;
+  rclcpp::TimerBase::SharedPtr pu_connected_timer;
+  rclcpp::TimerBase::SharedPtr pinging_timer;
   std::ofstream kmall_stream;
   uint16_t pck_cnt = 0;
 
@@ -84,7 +100,7 @@ struct KongsbergEM2040Private{
   bool m_decodingFailed = false;
 
   // If there's a larger kmall datagram that gets partitioned, we need to fix it
-  ds_core_msgs::RawData kmall_partitioned;
+  ds_core_msgs::msg::RawData kmall_partitioned;
   uint16_t kmall_dgmNum = 0;
   uint16_t kmall_numOfDgms = 0;
 

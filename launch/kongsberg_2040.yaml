@@ -1,25 +1,33 @@
-kmall_connection:
-    udp_address: "225.1.20.40"
-    udp_tx_port: 6021
-    udp_rx_port: 6020
-kctrl_connection:
-    udp_rx_port: 4002
-    udp_address: "127.0.0.1"
-    udp_tx_port: 14002
-# Data inputs
-sounder_name: EM2040_130
-run_startup: false
-ship_name: my_ship
-mrz_frame_id: sonar_vcs
-save_kmall_files: false
-bist_dir: /tmp/bist/
-kmall_dir: /tmp/kmall/
-xml_dir: /tmp/xml/
-max_kmall_buffer_kB: 30
-max_kmall_file_GB: 2
-# Timeouts
-kmall_timeout: 3.0
-kctrl_timeout: 3.0
-pu_powered_timeout: 10.0
-pu_connected_timeout: 10.0
-pinging_timeout: 3.0
+# ROS 2 parameter file. The top-level key must match the node name set in the launch file
+# (kongsberg_2040); use "/**" instead if you want these to apply regardless of node name.
+kongsberg_2040:
+  ros__parameters:
+    # Nested keys arrive at the node as dotted names, e.g. kmall_connection.udp_address
+    kmall_connection:
+      udp_address: "225.1.20.40"
+      udp_tx_port: 6021
+      udp_rx_port: 6020
+    kctrl_connection:
+      udp_rx_port: 4002
+      udp_address: "127.0.0.1"
+      udp_tx_port: 14002
+    # Data inputs
+    sounder_name: EM2040_130
+    run_startup: false
+    ship_name: my_ship
+    mrz_frame_id: sonar_vcs
+    save_kmall_files: false
+    bist_dir: /tmp/bist/
+    kmall_dir: /tmp/kmall/
+    xml_dir: /tmp/xml/
+    max_kmall_buffer_kB: 30
+    # NOTE: carried over from the ROS 1 yaml, which set max_kmall_file_GB. The driver only
+    # ever reads max_kmall_file_MB, so this key was and still is ignored -- the effective
+    # limit is the 400 MB default in setupParameters().
+    max_kmall_file_GB: 2
+    # Timeouts
+    kmall_timeout: 3.0
+    kctrl_timeout: 3.0
+    pu_powered_timeout: 10.0
+    pu_connected_timeout: 10.0
+    pinging_timeout: 3.0
