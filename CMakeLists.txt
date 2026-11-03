@@ -98,9 +98,6 @@ ament_export_dependencies(${DEPENDENCIES})
 #############
 
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
-  ament_lint_auto_find_test_dependencies()
-
   find_package(ament_cmake_gtest REQUIRED)
 
   # Both tests read fixtures out of test/ via relative paths, so they run from the package
